@@ -115,6 +115,9 @@ h3{font-size:15px;margin:0 0 10px}
   padding:10px 16px;border-radius:12px;font-size:14px;z-index:20;opacity:0;transition:opacity .2s;pointer-events:none}
 .toast.show{opacity:1}
 .set p{margin:0 0 10px}
+.sd{font-size:12px;font-weight:600;margin-left:6px;vertical-align:middle;padding:2px 8px;border-radius:99px;background:var(--brand-soft);color:var(--brand)}
+.sd.err{background:#fee2e2;color:#b91c1c}
+.sd:empty{display:none}
 .note{background:var(--brand-soft);border-radius:12px;padding:10px 12px;font-size:13px;margin-bottom:12px}
 </style>
 </head>
@@ -138,6 +141,7 @@ const KEY = 'money_app_v1';
 const COLORS = ['#db2777','#f59e0b','#3b82f6','#ef4444','#8b5cf6','#ec4899','#10b981','#f97316','#06b6d4','#84cc16','#6366f1','#a3a3a3'];
 const DEF = {
   tx: [], budget: 0, lastBackup: 0, lastCat: {},
+  sync: {url:'', key:''}, pending: {}, metaUpdated: 0, metaDirty: false, lastSync: 0,
   cats: {
     expense: [
       ['food','🍜','อาหาร'],['drink','☕','เครื่องดื่ม'],['travel','🚗','เดินทาง'],['grocery','🛒','ของใช้'],
@@ -159,10 +163,11 @@ function load(){
   }catch(e){}
   return JSON.parse(JSON.stringify(DEF));
 }
-function save(){
+function saveLocal(){
   try{ localStorage.setItem(KEY, JSON.stringify(S)); }
   catch(e){ toast('⚠️ บันทึกไม่สำเร็จ'); }
 }
+function save(){ saveLocal(); queueSync(); }
 let S = load();
 if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(()=>{});
 
@@ -240,9 +245,9 @@ function viewHome(){
   }
   const q = query.trim().toLowerCase();
   const shown = q ? list.filter(t => (t.note||'').toLowerCase().includes(q) || findCat(t.type,t.cat).name.toLowerCase().includes(q) || String(t.amount).includes(q)) : list;
-  const needBackup = S.tx.length >= 10 && Date.now() - (S.lastBackup||0) > 30*864e5;
+  const needBackup = !syncOn() && S.tx.length >= 10 && Date.now() - (S.lastBackup||0) > 30*864e5;
   return `
-  <div class="top"><h1>nadia's money 🎀</h1>${monthNav()}</div>
+  <div class="top"><h1>nadia's money 🎀<span id="sd" class="sd">${syncBadge()}</span></h1>${monthNav()}</div>
   ${needBackup?`<div class="note">💾 ไม่ได้สำรองข้อมูลเกิน 30 วันแล้ว <button data-act="backup" style="color:var(--brand);font-weight:700">สำรองตอนนี้</button></div>`:''}
   <div class="card hero">
     <div class="lbl">คงเหลือเดือนนี้</div>
@@ -330,9 +335,20 @@ function viewSettings(){
   </div>
   <div class="card set">
     <h3>💾 สำรองข้อมูล</h3>
-    <p class="small">ข้อมูลเก็บไว้ในเครื่องนี้เท่านั้น ควรสำรองไว้เดือนละครั้ง (สำรองล่าสุด: ${lb}) · มีทั้งหมด ${S.tx.length} รายการ</p>
+    <p class="small">${syncOn()?'ข้อมูลซิงค์อยู่ใน Google Sheets แล้ว สำรองเพิ่มได้ตามสะดวก':'ข้อมูลเก็บไว้ในเครื่องนี้เท่านั้น ควรสำรองไว้เดือนละครั้ง'} (สำรองล่าสุด: ${lb}) · มีทั้งหมด ${S.tx.length} รายการ</p>
     <button class="btn" data-act="backup">⬇️ ดาวน์โหลดไฟล์สำรอง (.json)</button>
     <div class="btns"><button class="btn ghost" data-act="restore">⬆️ กู้คืนจากไฟล์</button><button class="btn ghost" data-act="csv">📄 ส่งออก Excel (CSV)</button></div>
+  </div>
+  <div class="card set">
+    <h3>☁️ ซิงค์กับ Google Sheets</h3>
+    ${syncOn() ? `
+      <p class="small">เชื่อมต่อแล้ว ✓ · ซิงค์ล่าสุด: ${S.lastSync ? new Date(S.lastSync).toLocaleString('th-TH',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}) : '-'}${Object.keys(S.pending).length?` · รอส่ง ${Object.keys(S.pending).length} รายการ`:''}</p>
+      <div class="btns"><button class="btn ghost" data-act="syncnow">🔄 ซิงค์ตอนนี้</button><button class="btn danger" data-act="unlink">ยกเลิกเชื่อมต่อ</button></div>`
+    : `
+      <p class="small">ใส่ลิงก์ Web app และรหัสลับจาก Apps Script เพื่อให้มือถือกับ Mac เห็นข้อมูลเดียวกัน</p>
+      <div class="field"><input id="surl" placeholder="https://script.google.com/macros/s/.../exec" autocomplete="off"></div>
+      <div class="field"><input id="skey" placeholder="รหัสลับ เช่น pink-xxxxxxxxxx" autocomplete="off" autocapitalize="off"></div>
+      <button class="btn" data-act="link">เชื่อมต่อ</button>`}
   </div>
   <div class="card set">
     <h3>📲 ติดตั้งเป็นแอพ</h3>
@@ -342,7 +358,7 @@ function viewSettings(){
     <h3>⚠️ ล้างข้อมูล</h3>
     <button class="btn danger" data-act="wipe">ลบข้อมูลทั้งหมด</button>
   </div>
-  <p class="small" style="text-align:center">ไม่มีโฆษณา · ไม่ส่งข้อมูลออกนอกเครื่อง</p>`;
+  <p class="small" style="text-align:center">ไม่มีโฆษณา · ข้อมูลอยู่ในเครื่องคุณ${syncOn()?' และ Google Sheets ของคุณ':''} เท่านั้น</p>`;
 }
 
 /* ---------- add/edit sheet ---------- */
@@ -382,7 +398,8 @@ function saveTx(){
   const amount = calc(draft.amountStr);
   if (!(amount > 0)) { toast('ใส่จำนวนเงินก่อนนะ'); $('#amt').focus(); return; }
   if (!draft.cat) { toast('เลือกหมวดก่อนนะ'); return; }
-  const rec = {id: draft.id || (Date.now().toString(36)+Math.random().toString(36).slice(2,6)), type:draft.type, amount, cat:draft.cat, note:draft.note.trim(), date:draft.date, ts: draft.ts || Date.now()};
+  const rec = {id: draft.id || (Date.now().toString(36)+Math.random().toString(36).slice(2,6)), type:draft.type, amount, cat:draft.cat, note:draft.note.trim(), date:draft.date, ts: draft.ts || Date.now(), updated: Date.now()};
+  markTx(rec.id,'up');
   if (draft.id) S.tx = S.tx.map(t=>t.id===draft.id?rec:t); else S.tx.push(rec);
   S.lastCat[draft.type] = draft.cat;
   const wasEdit = !!draft.id;
@@ -417,7 +434,7 @@ $('#fileIn').addEventListener('change', e=>{
       const d = JSON.parse(r.result);
       if (!Array.isArray(d.tx)) throw 0;
       if (!confirm(`กู้คืน ${d.tx.length} รายการ? ข้อมูลปัจจุบันในเครื่องจะถูกแทนที่`)) return;
-      S = Object.assign(JSON.parse(JSON.stringify(DEF)), d); save(); render(); toast('กู้คืนเรียบร้อย');
+      const keep = S.sync; S = Object.assign(JSON.parse(JSON.stringify(DEF)), d, {sync: keep, pending:{}}); if(syncOn()) markAll(); save(); render(); toast('กู้คืนเรียบร้อย');
     }catch(err){ toast('ไฟล์ไม่ถูกต้อง'); }
   };
   r.readAsText(f); e.target.value='';
@@ -438,13 +455,13 @@ document.addEventListener('click', e=>{
   if (ds.delcat){
     const c = findCat(catTab, ds.delcat);
     if (visibleCats(catTab).length<=1) return toast('ต้องมีอย่างน้อย 1 หมวด');
-    if (confirm(`ลบหมวด "${c.name}"?`)){ c.hidden = true; save(); render(); }
+    if (confirm(`ลบหมวด "${c.name}"?`)){ c.hidden = true; markMeta(); save(); render(); }
     return;
   }
   if (ds.up){
     const arr=S.cats[catTab], i=arr.findIndex(c=>c.id===ds.up);
     let j=i-1; while(j>=0 && arr[j].hidden) j--;
-    if (j>=0){ [arr[i],arr[j]]=[arr[j],arr[i]]; save(); render(); }
+    if (j>=0){ [arr[i],arr[j]]=[arr[j],arr[i]]; markMeta(); save(); render(); }
     return;
   }
   switch(ds.act){
@@ -454,21 +471,26 @@ document.addEventListener('click', e=>{
     case 'close': return closeSheet();
     case 'savetx': return saveTx();
     case 'deltx':
-      if (confirm('ลบรายการนี้?')){ S.tx=S.tx.filter(t=>t.id!==draft.id); save(); closeSheet(); render(); toast('ลบแล้ว'); }
+      if (confirm('ลบรายการนี้?')){ markTx(draft.id,'del'); S.tx=S.tx.filter(t=>t.id!==draft.id); save(); closeSheet(); render(); toast('ลบแล้ว'); }
       return;
     case 'addcat': {
       const name=$('#newName').value.trim(), icon=$('#newIcon').value.trim()||'🏷️';
       if(!name) return toast('ใส่ชื่อหมวดก่อนนะ');
-      S.cats[catTab].push({id:'c'+Date.now().toString(36), icon, name}); save(); render(); toast('เพิ่มหมวดแล้ว'); return;
+      S.cats[catTab].push({id:'c'+Date.now().toString(36), icon, name}); markMeta(); save(); render(); toast('เพิ่มหมวดแล้ว'); return;
     }
     case 'savebudget': {
-      const v = calc($('#budget').value); S.budget = v>0 ? v : 0; save(); toast(S.budget?'ตั้งงบแล้ว':'ยกเลิกงบแล้ว'); return;
+      const v = calc($('#budget').value); S.budget = v>0 ? v : 0; markMeta(); save(); toast(S.budget?'ตั้งงบแล้ว':'ยกเลิกงบแล้ว'); return;
     }
+    case 'link': return linkSync();
+    case 'unlink':
+      if (confirm('ยกเลิกการเชื่อมต่อ? ข้อมูลในเครื่องนี้และใน Google Sheets ยังอยู่ครบ')){ S.sync={url:'',key:''}; S.pending={}; saveLocal(); setSync(); render(); }
+      return;
+    case 'syncnow': return sync(true);
     case 'backup': return backup();
     case 'restore': return $('#fileIn').click();
     case 'csv': return exportCsv();
     case 'wipe':
-      if (confirm('ลบข้อมูลทั้งหมด? (แนะนำให้สำรองก่อน)') && confirm('แน่ใจนะ? กู้คืนไม่ได้')){ S=JSON.parse(JSON.stringify(DEF)); save(); render(); toast('ล้างข้อมูลแล้ว'); }
+      if (confirm('ลบข้อมูลทั้งหมด? (แนะนำให้สำรองก่อน)' + (syncOn()?' ข้อมูลใน Google Sheets จะถูกลบด้วย':'')) && confirm('แน่ใจนะ? กู้คืนไม่ได้')){ const keep=S.sync, ids=S.tx.map(t=>t.id); S=JSON.parse(JSON.stringify(DEF)); S.sync=keep; if(syncOn()){ ids.forEach(id=>markTx(id,'del')); markMeta(); } save(); render(); toast('ล้างข้อมูลแล้ว'); }
       return;
   }
 });
@@ -482,7 +504,85 @@ document.addEventListener('keydown', e=>{
   if (e.key==='Escape' && draft) closeSheet();
 });
 
+/* ---------- sync (Google Sheets) ---------- */
+const syncOn = () => !!(S.sync && S.sync.url && S.sync.key);
+let syncState = '', syncing = false, syncAgain = false, syncTimer = null;
+function markTx(id, op){ if (syncOn()) S.pending[id] = {op, updated: Date.now()}; }
+function markMeta(){ S.metaUpdated = Date.now(); if (syncOn()) S.metaDirty = true; }
+function markAll(){ const now = Date.now(); S.tx.forEach(t=>{ t.updated = t.updated || now; S.pending[t.id] = {op:'up', updated: now}; }); S.metaDirty = true; S.metaUpdated = S.metaUpdated || now; }
+function syncBadge(){
+  if (!syncOn()) return '';
+  return ({busy:'⏳', ok:'☁️✓', err:'⚠️ ซิงค์ไม่ได้', offline:'📴 ออฟไลน์'})[syncState] || '☁️';
+}
+function setSync(st){ if (st!==undefined) syncState = st; const el = $('#sd'); if (el){ el.textContent = syncBadge(); el.classList.toggle('err', st==='err'); } }
+function queueSync(){ if (!syncOn()) return; clearTimeout(syncTimer); syncTimer = setTimeout(sync, 800); }
+function fixCat(t){
+  const list = S.cats[t.type] || [];
+  if (t.cat && list.some(c=>c.id===t.cat)) return t;
+  const byName = t.catName && list.find(c=>c.name===t.catName);
+  t.cat = byName ? byName.id : (t.type==='income' ? 'other_i' : 'other_e');
+  return t;
+}
+async function sync(manual){
+  if (!syncOn()) return;
+  if (syncing){ syncAgain = true; return; }
+  syncing = true; setSync('busy');
+  const sent = JSON.parse(JSON.stringify(S.pending));
+  const metaSent = S.metaDirty ? S.metaUpdated : 0;
+  const local = Object.fromEntries(S.tx.map(t=>[t.id,t]));
+  const body = {key: S.sync.key, upserts: [], deletes: [], meta: S.metaDirty ? {cats:S.cats, budget:S.budget, updated:S.metaUpdated} : null};
+  for (const [id,p] of Object.entries(sent)){
+    if (p.op==='del') body.deletes.push({id, updated:p.updated});
+    else if (local[id]) body.upserts.push({...local[id], updated: local[id].updated || p.updated, catName: findCat(local[id].type, local[id].cat).name});
+  }
+  const before = JSON.stringify([S.tx, S.cats, S.budget]);
+  try{
+    const r = await fetch(S.sync.url, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify(body)});
+    const d = await r.json();
+    if (!d.ok) throw new Error(d.error || 'error');
+    for (const [id,p] of Object.entries(sent)) if (S.pending[id] && S.pending[id].updated===p.updated) delete S.pending[id];
+    if (metaSent && S.metaUpdated===metaSent) S.metaDirty = false;
+    if (d.meta && !S.metaDirty && d.meta.updated > (S.metaUpdated||0)){ S.cats = d.meta.cats; S.budget = d.meta.budget; S.metaUpdated = d.meta.updated; }
+    else if (!d.meta && !S.metaDirty){ markMeta(); syncAgain = true; }
+    const now = Object.fromEntries(S.tx.map(t=>[t.id,t]));
+    let tx = d.tx.map(fixCat).map(t=>{ delete t.catName; return t; });
+    for (const [id,p] of Object.entries(S.pending)){
+      tx = tx.filter(t=>t.id!==id);
+      if (p.op==='up' && now[id]) tx.push(now[id]);
+    }
+    S.tx = tx; S.lastSync = Date.now(); saveLocal(); setSync('ok');
+    const typing = document.activeElement && document.activeElement.closest && document.activeElement.closest('#app') && document.activeElement.tagName==='INPUT';
+    if ((manual || JSON.stringify([S.tx, S.cats, S.budget]) !== before) && !typing) render();
+    if (manual) toast('ซิงค์เรียบร้อย ☁️');
+  }catch(e){
+    setSync(navigator.onLine ? 'err' : 'offline');
+    if (manual) toast(navigator.onLine ? 'ซิงค์ไม่ได้: ' + (e.message||'') : 'ไม่มีอินเทอร์เน็ต');
+  }
+  syncing = false;
+  if (syncAgain){ syncAgain = false; setTimeout(sync, 300); }
+}
+async function linkSync(){
+  const url = $('#surl').value.trim(), key = $('#skey').value.trim();
+  if (!/^https:\/\/script\.google(usercontent)?\.com\//.test(url)) return toast('ลิงก์ต้องขึ้นต้นด้วย https://script.google.com/');
+  if (!key) return toast('ใส่รหัสลับด้วยนะ');
+  toast('กำลังเชื่อมต่อ...');
+  try{
+    const r = await fetch(url + (url.includes('?')?'&':'?') + 'key=' + encodeURIComponent(key));
+    const d = await r.json();
+    if (!d.ok) return toast(d.error || 'เชื่อมต่อไม่ได้');
+    S.sync = {url, key};
+    if (S.tx.length && d.tx.length && !confirm(`ในเครื่องนี้มี ${S.tx.length} รายการ และใน Sheets มี ${d.tx.length} รายการ จะรวมทั้งสองฝั่งเข้าด้วยกัน ตกลงไหม?`)) { S.sync={url:'',key:''}; return; }
+    markAll();
+    if (d.meta && !S.tx.length){ S.metaDirty = false; S.metaUpdated = 0; }
+    saveLocal(); await sync(true); render();
+  }catch(e){ toast('เชื่อมต่อไม่ได้ ตรวจลิงก์และการตั้งค่า "Anyone" อีกครั้ง'); }
+}
+document.addEventListener('visibilitychange', ()=>{ if (document.visibilityState==='visible') sync(); });
+window.addEventListener('online', ()=>sync());
+setInterval(()=>{ if (document.visibilityState==='visible') sync(); }, 60000);
+
 render();
+sync();
 if ('serviceWorker' in navigator && location.protocol==='https:') navigator.serviceWorker.register('sw.js').catch(()=>{});
 </script>
 </body>
