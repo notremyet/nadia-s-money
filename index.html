@@ -128,7 +128,7 @@ h3{font-size:15px;margin:0 0 10px}
   <button data-tab="home" class="on"><span>🏠</span>หน้าหลัก</button>
   <button data-tab="summary"><span>📊</span>สรุป</button>
   <button class="fab" id="fab" aria-label="เพิ่มรายการ">+</button>
-  <button data-tab="cats"><span>🗂️</span>หมวดหมู่</button>
+  <button data-tab="subs"><span>🔁</span>บิลประจำ</button>
   <button data-tab="settings"><span>⚙️</span>ตั้งค่า</button>
 </nav>
 
@@ -140,7 +140,7 @@ h3{font-size:15px;margin:0 0 10px}
 const KEY = 'money_app_v1';
 const COLORS = ['#db2777','#f59e0b','#3b82f6','#ef4444','#8b5cf6','#ec4899','#10b981','#f97316','#06b6d4','#84cc16','#6366f1','#a3a3a3'];
 const DEF = {
-  tx: [], budget: 0, lastBackup: 0, lastCat: {},
+  tx: [], subs: [], budget: 0, lastBackup: 0, lastCat: {},
   sync: {url:'', key:''}, pending: {}, metaUpdated: 0, metaDirty: false, lastSync: 0,
   cats: {
     expense: [
@@ -205,7 +205,7 @@ let tab = 'home', month = curMonth(), sumType = 'expense', catFilter = null, que
 
 function render(){
   document.querySelectorAll('nav.tabs [data-tab]').forEach(b=>b.classList.toggle('on', b.dataset.tab===tab));
-  $('#app').innerHTML = ({home:viewHome, summary:viewSummary, cats:viewCats, settings:viewSettings})[tab]();
+  $('#app').innerHTML = ({home:viewHome, summary:viewSummary, cats:viewCats, subs:viewSubs, settings:viewSettings})[tab]();
 }
 function monthNav(){
   return `<div class="mnav"><button data-act="prev">‹</button><span>${monthLabel(month)}</span><button data-act="next">›</button></div>`;
@@ -255,6 +255,7 @@ function viewHome(){
     <div class="row"><div><span class="small">รายรับ</span><b>+${fmt(inc)}</b></div><div><span class="small">รายจ่าย</span><b>-${fmt(exp)}</b></div></div>
     ${budgetHtml}
   </div>
+  ${isCur?subBanner():''}
   ${isCur?`<div class="card today"><div><div class="small">ใช้ไปวันนี้</div><b class="exp">${baht(todayExp)}</b></div>
     <button class="btn" style="width:auto;padding:10px 18px;font-size:15px" data-act="add">+ บันทึก</button></div>`:''}
   ${list.length>5?`<input class="search" id="search" placeholder="🔎 ค้นหาโน้ต / หมวด / จำนวน" value="${esc(query)}">`:''}
@@ -311,7 +312,7 @@ function viewSummary(){
 function viewCats(){
   const cats = visibleCats(catTab);
   return `
-  <div class="top"><h1>หมวดหมู่</h1></div>
+  <div class="top"><h1>หมวดหมู่</h1><button class="btn ghost" style="width:auto;padding:8px 14px;font-size:14px" data-tab="settings">‹ ตั้งค่า</button></div>
   <div class="seg"><button class="e ${catTab==='expense'?'on':''}" data-ctab="expense">รายจ่าย</button><button class="i ${catTab==='income'?'on':''}" data-ctab="income">รายรับ</button></div>
   <div class="card">
     <div>${cats.map(c=>`<span class="chip">${c.icon} ${esc(c.name)}
@@ -334,6 +335,10 @@ function viewSettings(){
     <button class="btn" data-act="savebudget">บันทึกงบ</button>
   </div>
   <div class="card set">
+    <h3>🗂️ หมวดหมู่</h3>
+    <button class="btn ghost" data-tab="cats">จัดการหมวดหมู่ ›</button>
+  </div>
+  <div class="card set">
     <h3>💾 สำรองข้อมูล</h3>
     <p class="small">${syncOn()?'ข้อมูลซิงค์อยู่ใน Google Sheets แล้ว สำรองเพิ่มได้ตามสะดวก':'ข้อมูลเก็บไว้ในเครื่องนี้เท่านั้น ควรสำรองไว้เดือนละครั้ง'} (สำรองล่าสุด: ${lb}) · มีทั้งหมด ${S.tx.length} รายการ</p>
     <button class="btn" data-act="backup">⬇️ ดาวน์โหลดไฟล์สำรอง (.json)</button>
@@ -343,7 +348,8 @@ function viewSettings(){
     <h3>☁️ ซิงค์กับ Google Sheets</h3>
     ${syncOn() ? `
       <p class="small">เชื่อมต่อแล้ว ✓ · ซิงค์ล่าสุด: ${S.lastSync ? new Date(S.lastSync).toLocaleString('th-TH',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}) : '-'}${Object.keys(S.pending).length?` · รอส่ง ${Object.keys(S.pending).length} รายการ`:''}</p>
-      <div class="btns"><button class="btn ghost" data-act="syncnow">🔄 ซิงค์ตอนนี้</button><button class="btn danger" data-act="unlink">ยกเลิกเชื่อมต่อ</button></div>`
+      <div class="btns"><button class="btn ghost" data-act="syncnow">🔄 ซิงค์ตอนนี้</button><button class="btn danger" data-act="unlink">ยกเลิกเชื่อมต่อ</button></div>
+      <p class="small" style="margin-top:10px">🔔 อีเมลแจ้งเตือนบิลประจำ: ใน Apps Script เลือกฟังก์ชัน <b>setupReminders</b> แล้วกด Run ครั้งเดียว</p>`
     : `
       <p class="small">ใส่ลิงก์ Web app และรหัสลับจาก Apps Script เพื่อให้มือถือกับ Mac เห็นข้อมูลเดียวกัน</p>
       <div class="field"><input id="surl" placeholder="https://script.google.com/macros/s/.../exec" autocomplete="off"></div>
@@ -371,7 +377,7 @@ function openSheet(tx){
   $('#mask').classList.add('open');
   setTimeout(()=>{ const a=$('#amt'); if(a && !tx) a.focus(); }, 60);
 }
-function closeSheet(){ $('#mask').classList.remove('open'); draft=null; }
+function closeSheet(){ $('#mask').classList.remove('open'); draft=null; subDraft=null; }
 function renderSheet(){
   const d = draft, cats = visibleCats(d.type);
   if (d.cat && !cats.some(c=>c.id===d.cat) && d.id) cats.push(findCat(d.type,d.cat));
@@ -445,6 +451,9 @@ document.addEventListener('click', e=>{
   const el = e.target.closest('button'); if(!el) return;
   const ds = el.dataset;
   if (el.id==='fab') return openSheet();
+  if (ds.subedit) return openSub(S.subs.find(s=>s.id===ds.subedit));
+  if (ds.preset){ syncSubDraft(); subDraft.name=ds.preset; subDraft.icon=ds.pi; renderSubSheet(); $('#samt').focus(); return; }
+  if (ds.scycle){ syncSubDraft(); subDraft.cycle=ds.scycle; return renderSubSheet(); }
   if (ds.tab){ tab=ds.tab; catFilter=null; render(); window.scrollTo(0,0); return; }
   if (ds.edit) return openSheet(S.tx.find(t=>t.id===ds.edit));
   if (ds.ttype){ syncDraft(); draft.type=ds.ttype; draft.cat=S.lastCat[ds.ttype] || visibleCats(ds.ttype)[0]?.id; return renderSheet(); }
@@ -481,6 +490,11 @@ document.addEventListener('click', e=>{
     case 'savebudget': {
       const v = calc($('#budget').value); S.budget = v>0 ? v : 0; markMeta(); save(); toast(S.budget?'ตั้งงบแล้ว':'ยกเลิกงบแล้ว'); return;
     }
+    case 'addsub': return openSub();
+    case 'savesub': return saveSub();
+    case 'delsub':
+      if (confirm(`ลบ "${subDraft.name}"? (รายการรายจ่ายที่ลงไปแล้วจะยังอยู่)`)){ S.subs=S.subs.filter(s=>s.id!==subDraft.id); markMeta(); save(); closeSheet(); render(); }
+      return;
     case 'link': return linkSync();
     case 'unlink':
       if (confirm('ยกเลิกการเชื่อมต่อ? ข้อมูลในเครื่องนี้และใน Google Sheets ยังอยู่ครบ')){ S.sync={url:'',key:''}; S.pending={}; saveLocal(); setSync(); render(); }
@@ -530,19 +544,19 @@ async function sync(manual){
   const sent = JSON.parse(JSON.stringify(S.pending));
   const metaSent = S.metaDirty ? S.metaUpdated : 0;
   const local = Object.fromEntries(S.tx.map(t=>[t.id,t]));
-  const body = {key: S.sync.key, upserts: [], deletes: [], meta: S.metaDirty ? {cats:S.cats, budget:S.budget, updated:S.metaUpdated} : null};
+  const body = {key: S.sync.key, upserts: [], deletes: [], meta: S.metaDirty ? {cats:S.cats, budget:S.budget, subs:S.subs||[], updated:S.metaUpdated} : null};
   for (const [id,p] of Object.entries(sent)){
     if (p.op==='del') body.deletes.push({id, updated:p.updated});
     else if (local[id]) body.upserts.push({...local[id], updated: local[id].updated || p.updated, catName: findCat(local[id].type, local[id].cat).name});
   }
-  const before = JSON.stringify([S.tx, S.cats, S.budget]);
+  const before = JSON.stringify([S.tx, S.cats, S.budget, S.subs]);
   try{
     const r = await fetch(S.sync.url, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify(body)});
     const d = await r.json();
     if (!d.ok) throw new Error(d.error || 'error');
     for (const [id,p] of Object.entries(sent)) if (S.pending[id] && S.pending[id].updated===p.updated) delete S.pending[id];
     if (metaSent && S.metaUpdated===metaSent) S.metaDirty = false;
-    if (d.meta && !S.metaDirty && d.meta.updated > (S.metaUpdated||0)){ S.cats = d.meta.cats; S.budget = d.meta.budget; S.metaUpdated = d.meta.updated; }
+    if (d.meta && !S.metaDirty && d.meta.updated > (S.metaUpdated||0)){ S.cats = d.meta.cats; S.budget = d.meta.budget; S.subs = d.meta.subs || []; S.metaUpdated = d.meta.updated; }
     else if (!d.meta && !S.metaDirty){ markMeta(); syncAgain = true; }
     const now = Object.fromEntries(S.tx.map(t=>[t.id,t]));
     let tx = d.tx.map(fixCat).map(t=>{ delete t.catName; return t; });
@@ -551,8 +565,9 @@ async function sync(manual){
       if (p.op==='up' && now[id]) tx.push(now[id]);
     }
     S.tx = tx; S.lastSync = Date.now(); saveLocal(); setSync('ok');
+    processSubs();
     const typing = document.activeElement && document.activeElement.closest && document.activeElement.closest('#app') && document.activeElement.tagName==='INPUT';
-    if ((manual || JSON.stringify([S.tx, S.cats, S.budget]) !== before) && !typing) render();
+    if ((manual || JSON.stringify([S.tx, S.cats, S.budget, S.subs]) !== before) && !typing) render();
     if (manual) toast('ซิงค์เรียบร้อย ☁️');
   }catch(e){
     setSync(navigator.onLine ? 'err' : 'offline');
@@ -577,10 +592,127 @@ async function linkSync(){
     saveLocal(); await sync(true); render();
   }catch(e){ toast('เชื่อมต่อไม่ได้ ตรวจลิงก์และการตั้งค่า "Anyone" อีกครั้ง'); }
 }
-document.addEventListener('visibilitychange', ()=>{ if (document.visibilityState==='visible') sync(); });
+document.addEventListener('visibilitychange', ()=>{ if (document.visibilityState==='visible'){ processSubs(); render(); sync(); } });
 window.addEventListener('online', ()=>sync());
 setInterval(()=>{ if (document.visibilityState==='visible') sync(); }, 60000);
 
+/* ---------- บิลประจำ / ค่าสมาชิก ---------- */
+const PRESETS = [['🎬','Netflix'],['🎵','Spotify'],['▶️','YouTube Premium'],['☁️','iCloud'],['📱','ค่าโทรศัพท์'],['🌐','เน็ตบ้าน'],['🤖','AI'],['🏋️','ฟิตเนส'],['🛡️','ประกัน'],['🎮','เกม']];
+const CYCLE = {monthly:'รายเดือน', yearly:'รายปี', weekly:'รายสัปดาห์'};
+const pd = s => { const [y,m,d]=s.split('-').map(Number); return new Date(y,m-1,d); };
+const daysTo = (a,b) => Math.round((pd(b)-pd(a))/864e5);
+function occAt(sub,k){
+  const a = pd(sub.anchor);
+  if (sub.cycle==='weekly'){ const d=new Date(a); d.setDate(d.getDate()+7*k); return ymd(d); }
+  const months = sub.cycle==='yearly' ? 12*k : k;
+  const y = a.getFullYear(), m = a.getMonth()+months;
+  const dim = new Date(y, m+1, 0).getDate();
+  return ymd(new Date(y, m, Math.min(a.getDate(), dim)));
+}
+function occs(sub, from, to){
+  const out=[]; for(let k=0;k<3000;k++){ const d=occAt(sub,k); if(d>to) break; if(d>=from) out.push(d); } return out;
+}
+function nextDue(sub){
+  const t=todayStr(); for(let k=0;k<3000;k++){ const d=occAt(sub,k); if(d>=t) return d; } return t;
+}
+const perMonth = s => s.cycle==='yearly' ? s.amount/12 : s.cycle==='weekly' ? s.amount*52/12 : s.amount;
+const activeSubs = () => (S.subs||[]).filter(s=>s.active!==false);
+function dueText(n){ return n===0?'วันนี้':n===1?'พรุ่งนี้':`อีก ${n} วัน`; }
+function dueSoon(){ return activeSubs().map(s=>({s,d:nextDue(s)})).map(o=>({...o,n:daysTo(todayStr(),o.d)})).filter(o=>o.n<=(o.s.remind??3)).sort((a,b)=>a.n-b.n); }
+function ensureSubCat(){ if (!S.cats.expense.some(c=>c.id==='subs')){ S.cats.expense.splice(0,0,{id:'subs',icon:'🔁',name:'บิล/สมาชิก'}); markMeta(); } }
+function processSubs(){
+  const t = todayStr(); let changed=false;
+  (S.subs||[]).forEach(s=>{
+    if (s.active===false || !s.autoLog) return;
+    let from = s.logged ? ymd(new Date(pd(s.logged).getTime()+864e5)) : (s.created && s.created>s.anchor ? s.created : s.anchor);
+    const dates = occs(s, from, t);
+    dates.forEach(d=>{
+      const id = 's_'+s.id+'_'+d.replace(/-/g,'');
+      if (!S.tx.some(x=>x.id===id)){
+        S.tx.push({id, type:'expense', amount:s.amount, cat:s.cat||'subs', note:'🔁 '+s.name+(s.card?' · '+s.card:''), date:d, ts:Date.now(), updated:Date.now()});
+        markTx(id,'up');
+      }
+    });
+    if (dates.length){ s.logged = dates[dates.length-1]; changed=true; }
+  });
+  if (changed){ markMeta(); save(); }
+}
+function subBanner(){
+  const list = dueSoon(); if (!list.length) return '';
+  return `<div class="card" style="padding:12px 14px"><h3 style="margin-bottom:6px">🔔 ใกล้ถึงวันตัดเงิน</h3>${list.map(o=>`
+    <button class="crow" data-tab="subs"><div class="ic" style="width:34px;height:34px;font-size:17px">${esc(o.s.icon)}</div>
+    <div class="mid"><b style="font-weight:600">${esc(o.s.name)}</b><small style="display:block;color:var(--muted)">${o.s.card?esc(o.s.card)+' · ':''}${dayLabelFull(o.d)}</small></div>
+    <div style="text-align:right"><b>${baht(o.s.amount)}</b><small style="display:block;color:${o.n<=1?'var(--exp)':'var(--warn)'};font-weight:600">${dueText(o.n)}</small></div></button>`).join('')}</div>`;
+}
+const dayLabelFull = s => pd(s).toLocaleDateString('th-TH',{weekday:'short',day:'numeric',month:'short'});
+function viewSubs(){
+  const subs = (S.subs||[]).map(s=>({s,d:nextDue(s)})).sort((a,b)=>(a.s.active===false)-(b.s.active===false) || a.d.localeCompare(b.d));
+  const act = activeSubs();
+  const mon = act.reduce((a,s)=>a+perMonth(s),0);
+  const y0 = todayStr().slice(0,4)+'-01-01';
+  const paidYear = act.reduce((a,s)=>a + occs(s, s.anchor>y0?s.anchor:y0, todayStr()).length*s.amount, 0);
+  return `
+  <div class="top"><h1>บิลประจำ</h1><button class="btn" style="width:auto;padding:8px 14px;font-size:14px" data-act="addsub">+ เพิ่ม</button></div>
+  <div class="stat3">
+    <div><span class="small">ต่อเดือน</span><b class="exp">${fmt(Math.round(mon))}</b></div>
+    <div><span class="small">ต่อปี</span><b class="exp">${fmt(Math.round(mon*12))}</b></div>
+    <div><span class="small">จ่ายแล้วปีนี้</span><b>${fmt(Math.round(paidYear))}</b></div>
+  </div>
+  ${subs.length ? `<div class="list">${subs.map(({s,d})=>{ const n=daysTo(todayStr(),d), off=s.active===false; return `
+    <button class="item" data-subedit="${s.id}" style="${off?'opacity:.5':''}"><div class="ic">${esc(s.icon)}</div>
+    <div class="mid"><div>${esc(s.name)}</div><small>${CYCLE[s.cycle]}${s.card?' · '+esc(s.card):''}${s.autoLog?' · บันทึกอัตโนมัติ':''}</small>
+      <small style="color:${off?'var(--muted)':n<=(s.remind??3)?'var(--exp)':'var(--muted)'};font-weight:${n<=(s.remind??3)&&!off?700:400}">${off?'หยุดชั่วคราว':`ตัดครั้งถัดไป ${dayLabelFull(d)} (${dueText(n)})`}</small></div>
+    <div style="text-align:right"><div class="amt">${fmt(s.amount)}</div>${s.cycle!=='monthly'?`<small style="color:var(--muted)">≈${fmt(Math.round(perMonth(s)))}/ด.</small>`:''}</div></button>`}).join('')}</div>
+    <div class="card" style="margin-top:12px"><h3>สัดส่วนค่าใช้จ่ายต่อปี</h3>${act.slice().sort((a,b)=>perMonth(b)-perMonth(a)).map((s,i,arr)=>`
+      <div class="crow" style="cursor:default"><div class="mid"><div style="display:flex;justify-content:space-between"><span>${esc(s.icon)} ${esc(s.name)}</span><b>${fmt(Math.round(perMonth(s)*12))}</b></div>
+      <div class="bar"><i style="width:${perMonth(s)/perMonth(arr[0])*100}%;background:${COLORS[i%COLORS.length]}"></i></div></div></div>`).join('')}</div>`
+  : `<div class="empty"><div>🔁</div>ยังไม่มีบิลประจำ<br>กด "+ เพิ่ม" เพื่อเพิ่ม Netflix, ค่าโทรศัพท์ ฯลฯ</div>`}
+  ${syncOn()?'':`<p class="small" style="text-align:center;margin-top:12px">เชื่อม Google Sheets แล้วตั้งค่าอีเมลแจ้งเตือนได้ (ดูในตั้งค่า)</p>`}`;
+}
+let subDraft = null;
+function openSub(sub){
+  ensureSubCat();
+  subDraft = sub ? {...sub} : {id:null, icon:'🔁', name:'', amount:'', cycle:'monthly', anchor:todayStr(), remind:3, card:'', cat:'subs', autoLog:true, active:true};
+  renderSubSheet(); $('#mask').classList.add('open');
+}
+function renderSubSheet(){
+  const d = subDraft;
+  $('#sheet').innerHTML = `<div class="grab"></div>
+    <h3 style="text-align:center">${d.id?'แก้ไขบิลประจำ':'เพิ่มบิลประจำ'}</h3>
+    ${d.id?'':`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px">${PRESETS.map(([i,n])=>`<button class="chip" style="margin:0;padding:6px 10px" data-preset="${esc(n)}" data-pi="${i}">${i} ${esc(n)}</button>`).join('')}</div>`}
+    <div class="field"><input id="sicon" value="${esc(d.icon)}" maxlength="4" style="flex:0 0 60px;text-align:center;font-size:20px"><input id="sname" placeholder="ชื่อ เช่น Netflix" value="${esc(d.name)}" maxlength="30"></div>
+    <div class="field"><input id="samt" inputmode="decimal" placeholder="ราคา (บาท)" value="${d.amount}"></div>
+    <div class="seg">${Object.entries(CYCLE).map(([k,v])=>`<button class="${d.cycle===k?'on':''}" data-scycle="${k}">${v}</button>`).join('')}</div>
+    <label class="small">วันตัดเงินครั้งถัดไป (หรือครั้งล่าสุด)</label>
+    <div class="field" style="margin-top:4px"><input id="sdate" type="date" value="${d.anchor}"></div>
+    <div class="field"><input id="scard" placeholder="ตัดจากบัตร/บัญชีไหน (ไม่ใส่ก็ได้)" value="${esc(d.card)}" maxlength="30"></div>
+    <div class="field"><label class="small" style="align-self:center;flex:none">เตือนล่วงหน้า</label>
+      <select id="sremind" style="flex:1;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--bg)">${[0,1,2,3,5,7].map(n=>`<option value="${n}" ${n==(d.remind??3)?'selected':''}>${n===0?'วันที่ตัด':n+' วัน'}</option>`).join('')}</select></div>
+    <div class="field"><label class="small" style="align-self:center;flex:none">หมวด</label>
+      <select id="scat" style="flex:1;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--bg)">${visibleCats('expense').map(c=>`<option value="${c.id}" ${c.id===d.cat?'selected':''}>${c.icon} ${esc(c.name)}</option>`).join('')}</select></div>
+    <label class="crow" style="cursor:pointer"><input type="checkbox" id="sauto" ${d.autoLog?'checked':''} style="width:20px;height:20px;accent-color:var(--brand)"><div class="mid"><b style="font-weight:600">บันทึกเป็นรายจ่ายอัตโนมัติ</b><small style="display:block;color:var(--muted)">ถึงวันตัดเงินแล้วแอพจะลงรายการให้เอง</small></div></label>
+    ${d.id?`<label class="crow" style="cursor:pointer"><input type="checkbox" id="sactive" ${d.active!==false?'checked':''} style="width:20px;height:20px;accent-color:var(--brand)"><div class="mid"><b style="font-weight:600">ใช้งานอยู่</b><small style="display:block;color:var(--muted)">ปิดไว้ถ้ายกเลิก/พักสมาชิกชั่วคราว</small></div></label>`:''}
+    <button class="btn" style="margin-top:12px" data-act="savesub">บันทึก</button>
+    <div class="btns">${d.id?`<button class="btn danger" data-act="delsub">ลบ</button>`:''}<button class="btn ghost" data-act="close">ยกเลิก</button></div>`;
+}
+function syncSubDraft(){
+  const d=subDraft; d.icon=$('#sicon').value.trim()||'🔁'; d.name=$('#sname').value.trim(); d.amount=$('#samt').value.trim();
+  d.anchor=$('#sdate').value||todayStr(); d.card=$('#scard').value.trim(); d.remind=Number($('#sremind').value); d.cat=$('#scat').value;
+  d.autoLog=$('#sauto').checked; if($('#sactive')) d.active=$('#sactive').checked;
+}
+function saveSub(){
+  syncSubDraft(); const d=subDraft, amount=calc(d.amount);
+  if (!d.name) return toast('ใส่ชื่อก่อนนะ');
+  if (!(amount>0)) return toast('ใส่ราคาก่อนนะ');
+  S.subs = S.subs || [];
+  const old = d.id && S.subs.find(s=>s.id===d.id);
+  const rec = {...d, amount, id: d.id || 'b'+Date.now().toString(36), created: d.created || todayStr()};
+  if (old && (old.anchor!==rec.anchor || old.cycle!==rec.cycle)) { rec.logged = null; rec.created = todayStr(); }
+  if (old) S.subs = S.subs.map(s=>s.id===rec.id?rec:s); else S.subs.push(rec);
+  markMeta(); processSubs(); save(); closeSheet(); render(); toast('บันทึกแล้ว');
+}
+
+processSubs();
 render();
 sync();
 if ('serviceWorker' in navigator && location.protocol==='https:') navigator.serviceWorker.register('sw.js').catch(()=>{});
